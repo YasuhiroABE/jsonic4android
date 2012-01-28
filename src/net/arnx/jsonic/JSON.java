@@ -1994,7 +1994,7 @@ public class JSON {
 						if (hint != null) {
 							if (!hint.ignore()) {
 								mName = prop.getName();
-								if (!hint.name().isEmpty()) {
+								if (!(hint.name() == null || hint.name().length() == 0)) { // if(!(hint.name().isEmpty()) {..}
 									mName = hint.name();
 								} else if (getPropertyCaseStyle() != null) {
 									mName = getPropertyCaseStyle().to(mName);
@@ -2016,7 +2016,7 @@ public class JSON {
 						JSONHint hint = prop.getField().getAnnotation(JSONHint.class);
 						if (hint != null) {
 							String name = prop.getName();
-							if (!hint.name().isEmpty()) {
+							if (!(hint.name() == null || hint.name().length() == 0)) { // if(!(hint.name().isEmpty()) {..}
 								name = hint.name();
 							} else if (getPropertyCaseStyle() != null) {
 								name = getPropertyCaseStyle().to(name);

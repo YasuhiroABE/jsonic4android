@@ -1,9 +1,25 @@
 # Eclipse Android Library Project of JSONIC 1.2.9 for Android 1.6 or later.
 
+Original code of JSONIC JSON Library is developed by Hidekatsu Izuno at [jsonic.sourceforge.jp][http://jsonic.sourceforge.jp]
+
+It is easy to understand how to use the JSONIC JSON Library just browsing the sample code at the above site, I guess.
+
+## Usage
+TBD.
+
+## Environment
+This project is tested with Eclipse 3.6, Helios.
+
+## Contact Information
+Please, contact me with any questions, comments, suggestions, or problems.
+
+## Acknowledgments
+The JSONIC JSON Library is developed by Hidekatsu Izuno.
+
 ## License
 All files are licensed under the same license as the original JSONIC 1.2.9; Apache License,Version 2.0.
 
-My part of codes are licened under as the following;
+My part of codes are licensed under as the following license;
 
      Copyright (C) 2011-2012 Yasuhiro ABE <yasu@yasundial.org>
      
