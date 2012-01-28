@@ -1,17 +1,24 @@
 # Eclipse Android Library Project of JSONIC 1.2.9 for Android 1.6 or later.
 
-Original code of JSONIC JSON Library is developed by Hidekatsu Izuno at [jsonic.sourceforge.jp][http://jsonic.sourceforge.jp]
+Original code of JSONIC JSON Library is developed by Hidekatsu Izuno at http://jsonic.sourceforge.jp
 
 It is easy to understand how to use the JSONIC JSON Library just browsing the sample code at the above site, I guess.
 
+It is a derivative version, so that please never send your question to the original author.
+Please check the "Contact Information" section of this file.
+
 ## Usage
-TBD.
+1. $ git checkout git://github.com/YasuhiroABE/jsonic4android.git
+2. Select "Import ..." at the Eclipse menu.
+3. Select "Existing Projects into Workspace."
+4. Add check at  "Copy projects into workspace," then click the "Finish" button.
+5. After that, add the jsonic4android as a library at Library section of "Android" page of your project's properties.
 
 ## Environment
 This project is tested with Eclipse 3.6, Helios.
 
 ## Contact Information
-Please, contact me with any questions, comments, suggestions, or problems.
+Please, contact me <yasu@yasundial.org> with any questions, comments, suggestions, or problems.
 
 ## Acknowledgments
 The JSONIC JSON Library is developed by Hidekatsu Izuno.
