@@ -14,7 +14,7 @@ http://jsonic.sourceforge.jp
 質問などは上記サイト、作者に送らないでください。
 
 ## 使い方
-1. $ git checkout git://github.com/YasuhiroABE/jsonic4android.git
+1. $ git clone -b release_1.2.9 git://github.com/YasuhiroABE/jsonic4android.git
 2. Eclipseのメニューで、 "Import ..." を選択します。
 3. 次に "Existing Projects into Workspace." を選択します。
 4. gitコマンドを実行してできた、jsonic4androidディレクトリを指定し、"Finish"ボタンを押します。

@@ -8,7 +8,7 @@ It is a derivative version, so that please never send your question to the origi
 Please check the "Contact Information" section of this file.
 
 ## Usage
-1. $ git checkout git://github.com/YasuhiroABE/jsonic4android.git
+1. $ git clone -b release_1.2.9 git://github.com/YasuhiroABE/jsonic4android.git
 2. Select "Import ..." at the Eclipse menu.
 3. Select "Existing Projects into Workspace."
 4. Add check at  "Copy projects into workspace," then click the "Finish" button.
