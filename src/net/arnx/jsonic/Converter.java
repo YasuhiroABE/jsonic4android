@@ -80,7 +80,7 @@ final class FormatConverter implements Converter {
 	
 	public Object convert(JSON json, Context context, Object value, Class<?> c, Type t) throws Exception {
 		Context context2 = json.new Context(context);
-		context2.skipHint = true;
+		context2.skipHint = context.getHint();
 		value = json.preformatInternal(context2, value);
 		StringBuilderOutputSource fs = new StringBuilderOutputSource(new StringBuilder(200));
 		try {
@@ -90,8 +90,11 @@ final class FormatConverter implements Converter {
 		}
 		fs.flush();
 		
-		context.skipHint = true;
-		return json.postparse(context, fs.toString(), c, t);
+		context.skipHint = context2.skipHint;
+		Object ret =  json.postparse(context, fs.toString(), c, t);
+		context.skipHint = null;
+		
+		return ret;
 	}
 }
 
@@ -814,9 +817,9 @@ final class EnumConverter implements Converter {
 				for (Enum e : enums) {
 					if (str.equals(e.name())) return e;
 				}
-				if (context.getEnumCaseStyle() != null) {
+				if (context.getEnumStyle() != null) {
 					for (Enum e : enums) {
-						if (str.equals(context.getEnumCaseStyle().to(e.name()))) return e;
+						if (str.equals(context.getEnumStyle().to(e.name()))) return e;
 					}
 				}
 				throw new IllegalArgumentException(str + " is not " + c);

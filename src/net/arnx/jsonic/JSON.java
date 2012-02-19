@@ -25,7 +25,9 @@ import java.io.Reader;
 import java.io.Serializable;
 import java.io.Writer;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.lang.reflect.Member;
+import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Type;
 import java.math.BigDecimal;
@@ -160,7 +162,7 @@ import org.w3c.dom.Node;
  * </table>
  * 
  * @author Hidekatsu Izuno
- * @version 1.2.8
+ * @version 1.2.10
  * @see <a href="http://www.rfc-editor.org/rfc/rfc4627.txt">RFC 4627</a>
  * @see <a href="http://www.apache.org/licenses/LICENSE-2.0">the Apache License, Version 2.0</a>
  */
@@ -192,6 +194,7 @@ public class JSON {
 	
 	private static final Map<Class<?>, Formatter> FORMAT_MAP = new HashMap<Class<?>, Formatter>(50);
 	private static final Map<Class<?>, Converter> CONVERT_MAP = new HashMap<Class<?>, Converter>(50);
+	private static final int[] ESCAPE_CHARS = new int[128];
 	
 	static {
 		FORMAT_MAP.put(boolean.class, PlainFormatter.INSTANCE);
@@ -312,6 +315,14 @@ public class JSON {
 		CONVERT_MAP.put(TreeMap.class, MapConverter.INSTANCE);
 		CONVERT_MAP.put(LinkedHashMap.class, MapConverter.INSTANCE);
 		CONVERT_MAP.put(Properties.class, PropertiesConverter.INSTANCE);
+		
+		for (int i = 0; i < 32; i++) {
+			ESCAPE_CHARS[i] = 1;
+		}
+		ESCAPE_CHARS['\''] = 2;
+		ESCAPE_CHARS['"'] = 2;
+		ESCAPE_CHARS['\\'] = 3;
+		ESCAPE_CHARS[0x7F] = 1;
 	}
 	
 	static JSON newInstance() {
@@ -668,10 +679,10 @@ public class JSON {
 	}
 	
 	/**
-	 * Sets maximum depth for the nest level.
+	 * Sets maximum depth for the nest depth.
 	 * default value is 32.
 	 * 
-	 * @param value maximum depth for the nest level.
+	 * @param value maximum depth for the nest depth.
 	 */
 	public void setMaxDepth(int value) {
 		if (value < 0) {
@@ -681,7 +692,7 @@ public class JSON {
 	}
 	
 	/**
-	 * Gets maximum depth for the nest level.
+	 * Gets maximum depth for the nest depth.
 	 * 
 	 * @return a maximum depth
 	 */
@@ -828,7 +839,7 @@ public class JSON {
 	final Object preformatInternal(Context context, Object value) {
 		if (value == null) {
 			return null;
-		} else if (context.getLevel() > context.getMaxDepth()) {
+		} else if (context.getDepth() > context.getMaxDepth()) {
 			return null;
 		} else if (getClass() != JSON.class) {
 			try {
@@ -852,9 +863,7 @@ public class JSON {
 			JSONHint hint = context.getHint();
 			if (hint == null) {
 				// no handle
-			} else if (context.skipHint) {
-				context.skipHint = false;
-			} else if (hint.serialized()) {
+			} else if (hint.serialized() && hint != context.skipHint) {
 				f = PlainFormatter.INSTANCE;
 			} else if (String.class.equals(hint.type())) {
 				f = StringFormatter.INSTANCE;
@@ -932,7 +941,7 @@ public class JSON {
 					JSONException.FORMAT_ERROR, e);
 		}
 		
-		if (!isStruct && context.getLevel() == 0 && context.getMode() != Mode.SCRIPT) {
+		if (!isStruct && context.getDepth() == 0 && context.getMode() != Mode.SCRIPT) {
 			throw new JSONException(getMessage("json.format.IllegalRootTypeError"), 
 					JSONException.FORMAT_ERROR);
 		}
@@ -1320,55 +1329,54 @@ public class JSON {
 	}
 	
 	private String parseString(Context context, InputSource s, int level) throws IOException, JSONException {
-		int point = 0; // 0 '"|'' 1 'c' ... '"|'' E
 		StringBuilder sb = (level <= context.getMaxDepth()) ? context.getCachedBuffer() : null;
 		char start = '\0';
 		
 		int n = -1;
 		loop:while ((n = s.next()) != -1) {
 			char c = (char)n;
-			switch(c) {
-			case 0xFEFF: // BOM
-				continue;
-			case '\\':
-				if (point == 1) {
-					if (context.getMode() != Mode.TRADITIONAL || start == '"') {
-						s.back();
-						c = parseEscape(s);
-						if (sb != null) sb.append(c);
-					} else {
-						if (sb != null) sb.append(c);
+			if (start == '\0') {
+				switch (c) {
+				case '\'':
+					if (context.getMode() == Mode.STRICT) {
+						throw createParseException(getMessage("json.parse.UnexpectedChar", c), s);				
 					}
-				} else {
+				case '"':
+					start = c;
+					break;
+				default:
 					throw createParseException(getMessage("json.parse.UnexpectedChar", c), s);
 				}
-				continue;
-			case '\'':
-				if (context.getMode() == Mode.STRICT) {
+			} else if (c < ESCAPE_CHARS.length) {
+				switch (ESCAPE_CHARS[c]) {
+				case 0:
+					if (sb != null) sb.append(c);
 					break;
-				}
-			case '"':
-				if (point == 0) {
-					start = c;
-					point = 1;
-					continue;
-				} else if (point == 1) {
+				case 1: // control chars
+					if (context.getMode() != Mode.STRICT) {
+						if (sb != null) sb.append(c);
+					} else {
+						throw createParseException(getMessage("json.parse.UnexpectedChar", c), s);
+					}
+					break;
+				case 2: // "'
 					if (start == c) {
 						break loop;						
 					} else {
 						if (sb != null) sb.append(c);
 					}
-				} else {
-					throw createParseException(getMessage("json.parse.UnexpectedChar", c), s);
+					break;
+				case 3: // escape chars
+					if (context.getMode() != Mode.TRADITIONAL || start == '"') {
+						s.back();
+						c = parseEscape(s);
+					}
+					if (sb != null) sb.append(c);
+					break;
 				}
-				continue;
-			}
-			
-			if (point == 1 && (context.getMode() != Mode.STRICT  || c >= 0x20)) {
+			} else if (c != 0xFEFF) {
 				if (sb != null) sb.append(c);
-				continue;
 			}
-			throw createParseException(getMessage("json.parse.UnexpectedChar", c), s);
 		}
 		
 		if (n != start) {
@@ -1670,9 +1678,7 @@ public class JSON {
 			JSONHint hint = context.getHint();
 			if (hint == null) {
 				// no handle
-			} else if (context.skipHint) {
-				context.skipHint = false;
-			} else if (hint.serialized()) {
+			} else if (hint.serialized() && hint != context.skipHint) {
 				c = FormatConverter.INSTANCE;
 			} else if (Serializable.class.equals(hint.type())) {
 				c = SerializableConverter.INSTANCE;
@@ -1818,13 +1824,13 @@ public class JSON {
 		private final NamingStyle enumStyle;
 
 		private Object[] path;
-		private int level = -1;
+		private int depth = -1;
 		private Map<Class<?>, Object> memberCache;
 		private Map<String, DateFormat> dateFormatCache;
 		private Map<String, NumberFormat> numberFormatCache;
 		private StringBuilder builderCache;
 		
-		boolean skipHint = false;
+		JSONHint skipHint;
 		
 		public Context() {
 			synchronized (JSON.this) {
@@ -1855,7 +1861,7 @@ public class JSON {
 				dateFormat = context.dateFormat;
 				propertyStyle = context.propertyStyle;
 				enumStyle = context.enumStyle;
-				level = context.level;
+				depth = context.depth;
 				path = context.path.clone();
 			}
 		}
@@ -1893,10 +1899,20 @@ public class JSON {
 			return mode;
 		}
 		
+		public NamingStyle getPropertyStyle() {
+			return propertyStyle;
+		}
+		
+		public NamingStyle getEnumStyle() {
+			return enumStyle;
+		}
+		
+		@Deprecated
 		public NamingStyle getPropertyCaseStyle() {
 			return propertyStyle;
 		}
 		
+		@Deprecated
 		public NamingStyle getEnumCaseStyle() {
 			return enumStyle;
 		}
@@ -1906,8 +1922,18 @@ public class JSON {
 		 * 
 		 * @return level number. 0 is root node.
 		 */
+		@Deprecated
 		public int getLevel() {
-			return level;
+			return depth;
+		}
+		
+		/**
+		 * Returns the current depth.
+		 * 
+		 * @return depth number. 0 is root node.
+		 */
+		public int getDepth() {
+			return depth;
 		}
 		
 		/**
@@ -1916,16 +1942,16 @@ public class JSON {
 		 * @return Root node is '$'. When the parent is a array, the key is Integer, otherwise String. 
 		 */
 		public Object getKey() {
-			return path[level*2];
+			return path[depth*2];
 		}
 		
 		/**
-		 * Returns the key object in any level. the negative value means relative to current level.
+		 * Returns the key object in any depth. the negative value means relative to current depth.
 		 * 
 		 * @return Root node is '$'. When the parent is a array, the key is Integer, otherwise String. 
 		 */
 		public Object getKey(int level) {
-			if (level < 0) level = getLevel()+level;
+			if (level < 0) level = getDepth()+level;
 			return path[level*2];
 		}
 		
@@ -1935,7 +1961,7 @@ public class JSON {
 		 * @return the current annotation if present on this context, else null.
 		 */
 		public JSONHint getHint() {
-			return (JSONHint)path[level*2+1];
+			return (JSONHint)path[depth*2+1];
 		}
 		
 		@SuppressWarnings("unchecked")
@@ -1955,23 +1981,23 @@ public class JSON {
 		}
 		
 		void enter(Object key, JSONHint hint) {
-			level++;
+			depth++;
 			if (path == null) path = new Object[8];
-			if (path.length < level*2+2) {
-				Object[] newPath = new Object[Math.max(path.length*2, level*2+2)];
+			if (path.length < depth*2+2) {
+				Object[] newPath = new Object[Math.max(path.length*2, depth*2+2)];
 				System.arraycopy(path, 0, newPath, 0, path.length);
 				path = newPath;
 			}
-			path[level*2] = key;
-			path[level*2+1] = hint;
+			path[depth*2] = key;
+			path[depth*2+1] = hint;
 		}
 		
 		void enter(Object key) {
-			enter(key, (JSONHint)((level != -1) ? path[level*2+1] : null));
+			enter(key, (JSONHint)((depth != -1) ? path[depth*2+1] : null));
 		}
 		
 		void exit() {
-			level--;
+			depth--;
 		}
 		
 		boolean hasMemberCache(Class<?> c) {
@@ -1984,66 +2010,69 @@ public class JSON {
 			
 			List<PropertyInfo> props = (List<PropertyInfo>)memberCache.get(c);
 			if (props == null) {
-				props = new ArrayList<PropertyInfo>();
+				Map<String, PropertyInfo> map = new HashMap<String, PropertyInfo>();
+				
+				// Field
 				for (PropertyInfo prop : BeanInfo.get(c).getProperties()) {
-					if (prop.isStatic() || !prop.isReadable()) continue;
+					Field f = prop.getField();
+					if (f == null || ignore(this, c, f)) continue;
 					
-					String mName = null;
-					if (prop.getReadMethod() != null && !ignore(this, c, prop.getReadMethod())) {
-						JSONHint hint = prop.getReadMethod().getAnnotation(JSONHint.class);
-						if (hint != null) {
-							if (!hint.ignore()) {
-								mName = prop.getName();
-								if (!(hint.name() == null || hint.name().length() == 0)) { // if(!(hint.name().isEmpty()) {..}
-									mName = hint.name();
-								} else if (getPropertyCaseStyle() != null) {
-									mName = getPropertyCaseStyle().to(mName);
-								}
-								props.add(new PropertyInfo(prop.getBeanClass(), mName, 
-										null, prop.getReadMethod(), prop.getWriteMethod(), prop.isStatic(), hint.ordinal()));
-							}
-						} else if (getPropertyCaseStyle() != null) {
-							mName = getPropertyCaseStyle().to(prop.getName());
-							props.add(new PropertyInfo(prop.getBeanClass(), mName, 
-									prop.getField(), prop.getReadMethod(), prop.getWriteMethod(), prop.isStatic(), prop.getOrdinal()));
-						} else {
-							mName = prop.getName();
-							props.add(prop);
+					JSONHint hint = f.getAnnotation(JSONHint.class);
+					String name = null;
+					int ordinal = prop.getOrdinal();
+					if (hint != null) {
+						if (hint.ignore()) continue;
+						ordinal = hint.ordinal();
+						if (!(hint.name() == null || hint.name().length() == 0)) name = hint.name();
+					}
+					
+					if (name == null) {
+						name = normalize(prop.getName());
+						if (getPropertyStyle() != null) {
+							name = getPropertyStyle().to(name);
 						}
 					}
 					
-					if (prop.getField() != null && !ignore(this, c, prop.getField())) {
-						JSONHint hint = prop.getField().getAnnotation(JSONHint.class);
-						if (hint != null) {
-							String name = prop.getName();
-							if (!(hint.name() == null || hint.name().length() == 0)) { // if(!(hint.name().isEmpty()) {..}
-								name = hint.name();
-							} else if (getPropertyCaseStyle() != null) {
-								name = getPropertyCaseStyle().to(name);
-							}
-							if (!name.equals(mName) && !hint.ignore()) {
-								props.add(new PropertyInfo(prop.getBeanClass(), name, 
-										prop.getField(), null, null, prop.isStatic(), hint.ordinal()));
-							}
-						} else if (mName != null) {
-							String name = prop.getName();
-							if (getPropertyCaseStyle() != null) {
-								name = getPropertyCaseStyle().to(name);
-							}
-							if (!name.equals(mName)) {
-								props.add(new PropertyInfo(prop.getBeanClass(), name, 
-										prop.getField(), null, null, prop.isStatic(), prop.getOrdinal()));
-							}
-						} else if (getPropertyCaseStyle() != null) {
-							props.add(new PropertyInfo(prop.getBeanClass(), getPropertyCaseStyle().to(prop.getName()), 
-									prop.getField(), prop.getReadMethod(), prop.getWriteMethod(), prop.isStatic(), prop.getOrdinal()));
-						} else {
-							props.add(prop);
-						}
+					if (!name.equals(prop.getName()) || ordinal != prop.getOrdinal() || f != prop.getReadMember()) {
+						map.put(name, new PropertyInfo(prop.getBeanClass(), name, 
+							prop.getField(), null, null, prop.isStatic(), ordinal));
+					} else {
+						map.put(name, prop);
 					}
 				}
+				
+				// Method
+				for (PropertyInfo prop : BeanInfo.get(c).getProperties()) {
+					Method m = prop.getReadMethod();
+					if (m == null || ignore(this, c, m)) continue;
+					
+					JSONHint hint = m.getAnnotation(JSONHint.class);
+					String name = null;
+					int ordinal = prop.getOrdinal();
+					if (hint != null) {
+						if (hint.ignore()) continue;
+						ordinal = hint.ordinal();
+						if (!(hint.name() == null || hint.name().length() == 0)) name = hint.name();
+					}
+					
+					if (name == null) {
+						name = normalize(prop.getName());
+						if (getPropertyStyle() != null) {
+							name = getPropertyStyle().to(name);
+						}
+					}
+					
+					if (!name.equals(prop.getName()) || ordinal != prop.getOrdinal()) {
+						map.put(name, new PropertyInfo(prop.getBeanClass(), name, 
+							null, prop.getReadMethod(), null, prop.isStatic(), ordinal));
+					} else {
+						map.put(name, prop);
+					}
+				}
+				
+				props = new ArrayList<PropertyInfo>(map.values());
 				Collections.sort(props);
-				memberCache.put(c, props);				
+				memberCache.put(c, props);
 			}
 			return props;
 		}
@@ -2054,47 +2083,67 @@ public class JSON {
 			
 			Map<String, PropertyInfo> props = (Map<String, PropertyInfo>)memberCache.get(c);
 			if (props == null) {
-				props = new HashMap<String, PropertyInfo>();
+				Map<String, PropertyInfo> map = new HashMap<String, PropertyInfo>();
+				
+				// Field
 				for (PropertyInfo prop : BeanInfo.get(c).getProperties()) {
-					if (prop.isStatic() || !prop.isWritable() || ignore(this, c, prop.getWriteMember())) {
-						continue;
-					}
+					Field f = prop.getField();
+					if (f == null || Modifier.isFinal(f.getModifiers()) || ignore(this, c, f)) continue;
 					
+					JSONHint hint = f.getAnnotation(JSONHint.class);
 					String name = null;
-					int order = -1;
-										
-					JSONHint hint = prop.getWriteAnnotation(JSONHint.class);
+					int ordinal = prop.getOrdinal();
 					if (hint != null) {
 						if (hint.ignore()) continue;
-						if (hint.name().length() > 0) name = hint.name();
-						order = hint.ordinal();
+						ordinal = hint.ordinal();
+						if (!(hint.name() == null || hint.name().length() == 0)) name = hint.name();
 					}
 					
-					if (name != null) {
-						if (prop.getWriteMethod() != null && prop.getField() != null && !Modifier.isFinal(prop.getField().getModifiers())) {
-							props.put(name, new PropertyInfo(prop.getBeanClass(), name, 
-									null, prop.getReadMethod(), prop.getWriteMethod(), prop.isStatic(), order));
-							prop = new PropertyInfo(prop.getBeanClass(), prop.getName(), 
-									prop.getField(), null, null, prop.isStatic(), order);
-						} else {
-							props.put(name, new PropertyInfo(prop.getBeanClass(), name, 
-									prop.getField(), prop.getReadMethod(), prop.getWriteMethod(), prop.isStatic(), order));
-							continue;
+					if (name == null) {
+						name = normalize(prop.getName());
+						if (getPropertyStyle() != null) {
+							name = getPropertyStyle().to(name);
 						}
-					} else if (order >= 0) {
-						prop = new PropertyInfo(prop.getBeanClass(), prop.getName(), 
-								prop.getField(), prop.getReadMethod(), prop.getWriteMethod(), prop.isStatic(), order);
 					}
-				
-					props.put(prop.getName(), prop);
-					if (getPropertyCaseStyle() != null) {
-						name = getPropertyCaseStyle().to(prop.getName());
-						if (!prop.getName().equals(name)) {
-							props.put(name, prop);
-						}
+					
+					if (!name.equals(prop.getName()) || ordinal != prop.getOrdinal() || f != prop.getWriteMember()) {
+						map.put(name, new PropertyInfo(prop.getBeanClass(), name, 
+							prop.getField(), null, null, prop.isStatic(), ordinal));
+					} else {
+						map.put(name, prop);
 					}
 				}
 				
+				// Method
+				for (PropertyInfo prop : BeanInfo.get(c).getProperties()) {
+					Method m = prop.getWriteMethod();
+					if (m == null || ignore(this, c, m)) continue;
+					
+					JSONHint hint = m.getAnnotation(JSONHint.class);
+					String name = null;
+					int ordinal = prop.getOrdinal();
+					if (hint != null) {
+						if (hint.ignore()) continue;
+						ordinal = hint.ordinal();
+						if (!(hint.name() == null || hint.name().length() == 0)) name = hint.name();
+					}
+					
+					if (name == null) {
+						name = normalize(prop.getName());
+						if (getPropertyStyle() != null) {
+							name = getPropertyStyle().to(name);
+						}
+					}
+					
+					if (!name.equals(prop.getName()) || ordinal != prop.getOrdinal()) {
+						map.put(name, new PropertyInfo(prop.getBeanClass(), name, 
+							null, null, prop.getWriteMethod(), prop.isStatic(), ordinal));
+					} else {
+						map.put(name, prop);
+					}
+				}
+				
+				props = map;
 				memberCache.put(c, props);
 			}
 			return props;
