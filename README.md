@@ -1,4 +1,4 @@
-# Eclipse Android Library Project of JSONIC 1.2.9 for Android 1.6 or later.
+# Eclipse Android Library Project of JSONIC 1.2.10 for Android 1.6 or later.
 
 Original code of JSONIC JSON Library is developed by Hidekatsu Izuno at http://jsonic.sourceforge.jp
 
